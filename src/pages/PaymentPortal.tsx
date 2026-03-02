@@ -155,8 +155,15 @@ const PaymentPortal = () => {
       });
 
       if (error || !data?.payment_url) {
-        console.error('Link creation error details:', data);
-        const errorMsg = data?.error || error?.message || 'Failed to create payment link';
+        console.error('Link creation error details:', { error, data });
+        let errorMsg = 'Failed to create payment link';
+
+        if (data?.error) {
+          errorMsg = `${data.error} (Status: ${data.status || 'unknown'})`;
+        } else if (error?.message) {
+          errorMsg = error.message;
+        }
+
         throw new Error(errorMsg);
       }
 

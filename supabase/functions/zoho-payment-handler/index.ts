@@ -17,20 +17,43 @@ async function getZohoAccessToken() {
     const clientSecret = Deno.env.get('ZOHO_CLIENT_SECRET');
     const refreshToken = Deno.env.get('ZOHO_REFRESH_TOKEN');
 
-    if (!clientId || !clientSecret || !refreshToken) {
-        throw new Error('Zoho OAuth credentials are not configured');
+    if (!refreshToken || refreshToken === 'your_refresh_token') {
+        throw new Error('ZOHO_REFRESH_TOKEN is not configured. Please set ZOHO_REFRESH_TOKEN to your "Regenerated API Key" from Zoho Payments dashboard.');
     }
 
-    const tokenUrl = `https://accounts.zoho.in/oauth/v2/token?refresh_token=${refreshToken}&client_id=${clientId}&client_secret=${clientSecret}&grant_type=refresh_token`;
-
-    const response = await fetch(tokenUrl, { method: 'POST' });
-    const data: ZohoTokenResponse = await response.json();
-
-    if (!response.ok) {
-        throw new Error(`Failed to get Zoho access token: ${JSON.stringify(data)}`);
+    // If it looks like a direct API Key (prefix 1002.) and no client credentials exist,
+    // OR if it's the only thing provided, try using it directly first.
+    if (refreshToken.startsWith('1002.') && (!clientId || clientId.includes('your_'))) {
+        console.log('Using ZOHO_REFRESH_TOKEN directly as Access Token (Static Key Mode)');
+        return refreshToken;
     }
 
-    return data.access_token;
+    try {
+        const tokenUrl = `https://accounts.zoho.in/oauth/v2/token?refresh_token=${refreshToken}&client_id=${clientId}&client_secret=${clientSecret}&grant_type=refresh_token`;
+
+        const response = await fetch(tokenUrl, { method: 'POST' });
+        const responseText = await response.text();
+
+        if (!response.ok) {
+            console.warn(`Zoho OAuth refresh failed (Status ${response.status}):`, responseText);
+
+            // Fallback: If it's a 4xx error but the token looks like a static key, try using it directly
+            if (refreshToken.startsWith('1002.')) {
+                console.log('OAuth failed, falling back to using token directly as a static key');
+                return refreshToken;
+            }
+            throw new Error(`Failed to get Zoho access token: ${responseText}`);
+        }
+
+        const data: ZohoTokenResponse = JSON.parse(responseText);
+        return data.access_token;
+    } catch (err) {
+        if (refreshToken.startsWith('1002.')) {
+            console.log('Request error during OAuth, falling back to static token');
+            return refreshToken;
+        }
+        throw err;
+    }
 }
 
 // Helper to verify Zoho Webhook signature
@@ -131,7 +154,13 @@ serve(async (req: Request) => {
                 body: JSON.stringify(payload),
             });
 
-            const linkData = await response.json();
+            const responseText = await response.text();
+            let linkData;
+            try {
+                linkData = JSON.parse(responseText);
+            } catch (e) {
+                linkData = { message: 'Raw response', raw: responseText };
+            }
 
             if (!response.ok) {
                 console.error('Zoho API Error (Link):', {
@@ -141,7 +170,8 @@ serve(async (req: Request) => {
                 return new Response(
                     JSON.stringify({
                         error: linkData.message || 'Failed to create payment link',
-                        details: linkData
+                        details: linkData,
+                        status: response.status
                     }),
                     { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
                 )
