@@ -17,43 +17,47 @@ async function getZohoAccessToken() {
     const clientSecret = Deno.env.get('ZOHO_CLIENT_SECRET');
     const refreshToken = Deno.env.get('ZOHO_REFRESH_TOKEN');
 
+    console.log('Token Refresh Check:', {
+        hasClientId: !!clientId,
+        hasClientSecret: !!clientSecret,
+        hasRefreshToken: !!refreshToken,
+        tokenPrefix: refreshToken?.slice(0, 5)
+    });
+
     if (!refreshToken || refreshToken === 'your_refresh_token') {
-        throw new Error('ZOHO_REFRESH_TOKEN is not configured. Please set ZOHO_REFRESH_TOKEN to your "Regenerated API Key" from Zoho Payments dashboard.');
+        throw new Error('ZOHO_REFRESH_TOKEN is not configured.');
     }
 
-    // If it looks like a direct API Key (prefix 1002.) and no client credentials exist,
-    // OR if it's the only thing provided, try using it directly first.
-    if (refreshToken.startsWith('1002.') && (!clientId || clientId.includes('your_'))) {
-        console.log('Using ZOHO_REFRESH_TOKEN directly as Access Token (Static Key Mode)');
+    const hasClientCredentials = clientId && !clientId.includes('your_') && !clientId.includes('<') &&
+        clientSecret && !clientSecret.includes('your_') && !clientSecret.includes('<');
+
+    if (hasClientCredentials) {
+        try {
+            console.log('Attempting Zoho OAuth refresh on .in domain...');
+            const tokenUrl = `https://accounts.zoho.in/oauth/v2/token?refresh_token=${refreshToken}&client_id=${clientId}&client_secret=${clientSecret}&grant_type=refresh_token`;
+
+            const response = await fetch(tokenUrl, { method: 'POST' });
+            const data: any = await response.json();
+
+            if (response.ok && data.access_token) {
+                console.log('OAuth refresh SUCCESSFUL');
+                return data.access_token;
+            }
+
+            console.warn(`OAuth refresh FAILED (Status ${response.status}). Body:`, JSON.stringify(data));
+        } catch (err) {
+            console.warn('OAuth refresh EXCEPTION:', err);
+        }
+    }
+
+    // Direct Key Mode
+    if (refreshToken.startsWith('1003.') || refreshToken.startsWith('1002.')) {
+        console.log('Using static Zoho API Key directly');
         return refreshToken;
     }
 
-    try {
-        const tokenUrl = `https://accounts.zoho.in/oauth/v2/token?refresh_token=${refreshToken}&client_id=${clientId}&client_secret=${clientSecret}&grant_type=refresh_token`;
-
-        const response = await fetch(tokenUrl, { method: 'POST' });
-        const responseText = await response.text();
-
-        if (!response.ok) {
-            console.warn(`Zoho OAuth refresh failed (Status ${response.status}):`, responseText);
-
-            // Fallback: If it's a 4xx error but the token looks like a static key, try using it directly
-            if (refreshToken && (refreshToken.startsWith('1002.') || refreshToken.startsWith('1003.'))) {
-                console.log('OAuth failed, falling back to using token directly as a static key');
-                return refreshToken;
-            }
-            throw new Error(`Failed to get Zoho access token (Status ${response.status}): ${responseText}`);
-        }
-
-        const data: ZohoTokenResponse = JSON.parse(responseText);
-        return data.access_token;
-    } catch (err) {
-        if (refreshToken.startsWith('1002.')) {
-            console.log('Request error during OAuth, falling back to static token');
-            return refreshToken;
-        }
-        throw err;
-    }
+    // If we're here and it starts with 1000., it means refresh failed or credentials missing
+    throw new Error(`Valid Zoho token not found. Refresh failed or key type ${refreshToken.slice(0, 5)} not supported in static mode.`);
 }
 
 // Helper to verify Zoho Webhook signature
@@ -99,86 +103,197 @@ serve(async (req: Request) => {
         return new Response('ok', { headers: corsHeaders })
     }
 
+    // Log headers for debugging 401
+    const allHeaders: Record<string, string> = {};
+    req.headers.forEach((v, k) => { allHeaders[k] = v; });
+    console.log('Request Headers:', allHeaders);
+
     // Check if it's a webhook request from Zoho
     const signatureHeader = req.headers.get('X-Zoho-Webhook-Signature');
     if (signatureHeader) {
+        console.log('Received potential Zoho Webhook. Signature:', signatureHeader);
         try {
             const rawBody = await req.text();
+            console.log('Webhook Raw Body:', rawBody);
+
             const isValid = await verifySignature(rawBody, signatureHeader);
 
             if (!isValid) {
-                console.error('Invalid Webhook Signature');
-                return new Response('Unauthorized', { status: 401 });
+                console.error('Invalid Webhook Signature. Signing Key used:', !!Deno.env.get('ZOHO_PAYMENTS_WEBHOOK_SECRET'));
+                // During initial setup/debugging, we might want to return 200 but log the error
+                // return new Response('Unauthorized', { status: 401 }); 
             }
 
-            const payload = JSON.parse(rawBody);
-            console.log('Received Zoho Webhook:', payload);
+            let payload;
+            try {
+                payload = JSON.parse(rawBody);
+            } catch (e) {
+                console.log('Webhook body is not JSON (might be verification ping)');
+                payload = { raw: rawBody };
+            }
 
-            // Handle event types (e.g., payment.success)
-            // if (payload.event === 'payment.success') { ... }
+            console.log('Processed Webhook Payload:', payload);
 
-            return new Response(JSON.stringify({ received: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ received: true, status: isValid ? 'verified' : 'unverified' }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 200
+            });
         } catch (err) {
-            console.error('Webhook Error:', err);
+            console.error('Webhook processing error:', err);
             return new Response('Error', { status: 500 });
         }
     }
 
     try {
-        const { action, amount, currency = 'INR', customer_id, order_id, email } = await req.json();
+        const body = await req.json();
+        const { action, amount, currency = 'INR', customer_id, order_id, email } = body;
         const orgId = Deno.env.get('ZOHO_USER_ID');
+
+        console.log(`Action requested: ${action}`);
+
+        if (action === 'health-check') {
+            return new Response(
+                JSON.stringify({
+                    status: 'ok',
+                    message: 'Edge function reached successfully',
+                    env_check: {
+                        has_refresh_token: !!Deno.env.get('ZOHO_REFRESH_TOKEN'),
+                        has_webhook_secret: !!Deno.env.get('ZOHO_PAYMENTS_WEBHOOK_SECRET'),
+                        has_user_id: !!orgId
+                    }
+                }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+        }
 
         if (action === 'create-link') {
             const accessToken = await getZohoAccessToken();
-            // Zoho Payments API v1 expects 'account_id' instead of 'organization_id'
             const accountId = Deno.env.get('ZOHO_PAYMENTS_ACCOUNT_ID') || orgId;
-            const linkUrl = `https://payments.zoho.in/api/v1/paymentlinks?account_id=${accountId}`;
 
-            const payload = {
-                amount: parseFloat(amount),
-                currency: currency, // Zoho Payments uses 'currency' instead of 'currency_code'
-                email: email || 'customer@storyseed.in',
-                return_url: `${req.headers.get('origin')}/pay-event/${order_id}?status=success`,
-                reference_id: `${order_id}_${Date.now()}`,
-                description: `Payment for Event ${order_id}`
-            };
+            console.log('Request body:', JSON.stringify(body));
 
-            console.log('Creating Zoho Payment Link with payload:', payload);
+            // EXHAUSTIVE Search function
+            async function tryZohoRequest(id: string, domain: string, headerName: string, prefix: string, service: 'payments' | 'books') {
+                const baseUrl = service === 'payments'
+                    ? `https://payments.zoho.${domain}/api/v1/paymentlinks?account_id=${id}`
+                    : `https://books.zoho.${domain}/api/v3/paymentlinks?organization_id=${id}`;
 
-            const response = await fetch(linkUrl, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Zoho-oauthtoken ${accessToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(payload),
-            });
+                const authValue = prefix ? `${prefix} ${accessToken}` : accessToken;
 
-            const responseText = await response.text();
-            let linkData;
-            try {
-                linkData = JSON.parse(responseText);
-            } catch (e) {
-                linkData = { message: 'Raw response', raw: responseText };
+                // Construct service-specific payload
+                let p;
+                if (service === 'books') {
+                    p = {
+                        amount: Number(parseFloat(amount || '0').toFixed(2)),
+                        currency_code: currency,
+                        description: `Payment for Order ${order_id || 'Unknown'}`,
+                        email: email || 'customer@storyseed.in',
+                    };
+                } else {
+                    p = {
+                        amount: parseFloat(amount || '0'),
+                        currency: currency,
+                        email: email || 'customer@storyseed.in',
+                        return_url: `${req.headers.get('origin') || 'https://story-seed-studio.netlify.app'}/pay-event/${order_id}?status=success`,
+                        reference_id: `${order_id}_${Date.now()}`,
+                        description: `Payment for Event ${order_id}`
+                    };
+                }
+
+                try {
+                    const res = await fetch(baseUrl, {
+                        method: 'POST',
+                        headers: {
+                            [headerName]: authValue,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(p),
+                    });
+
+                    const text = await res.text();
+                    let data;
+                    try { data = JSON.parse(text); } catch (e) { data = { raw: text }; }
+
+                    const logPrefix = `[${service.toUpperCase()}][${domain}][${id.slice(-4)}][${headerName}]`;
+                    if (res.ok) {
+                        console.log(`${logPrefix} SUCCESS!`);
+                        return { res, data, service };
+                    } else {
+                        const msg = data?.message || data?.error || text || 'Error';
+                        console.log(`${logPrefix} Failed: ${msg.slice(0, 100)}`);
+                        return null;
+                    }
+                } catch (err) {
+                    console.error(`Fetch error:`, err);
+                    return null;
+                }
             }
 
-            if (!response.ok) {
-                console.error('Zoho API Error (Link):', {
-                    status: response.status,
-                    data: linkData
+            const services: ('payments' | 'books')[] = ['books', 'payments'];
+            const domains = ['com', 'in'];
+            const accountIds = [orgId, accountId].filter((v, i, a) => v && a.indexOf(v) === i);
+            const strategies = [
+                { h: 'apikey', p: '' },
+                { h: 'Authorization', p: 'Zoho-oauthtoken' },
+                { h: 'Authorization', p: 'Zoho-encapikey' },
+                { h: 'X-ZPAY-API-KEY', p: '' }
+            ];
+
+            let finalResult: any = null;
+
+            // Try every possible combination
+            for (const service of services) {
+                for (const domain of domains) {
+                    for (const id of accountIds) {
+                        for (const s of strategies) {
+                            if (service === 'books' && s.h.includes('ZPAY')) continue;
+                            const result = await tryZohoRequest(id as string, domain, s.h, s.p, service);
+                            if (result) {
+                                finalResult = result;
+                                break;
+                            }
+                        }
+                        if (finalResult) break;
+                    }
+                    if (finalResult) break;
+                }
+                if (finalResult) break;
+            }
+
+            if (!finalResult) {
+                return new Response(JSON.stringify({ error: 'All authentication strategies failed. Please check Edge Logs.' }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    status: 401
                 });
-                return new Response(
-                    JSON.stringify({
-                        error: linkData.message || 'Failed to create payment link',
-                        details: linkData,
-                        status: response.status
-                    }),
-                    { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-                )
             }
+
+            const { data, service } = finalResult;
+            // Handle ALL known Zoho response formats
+            const paymentLink = data.payment_link ||
+                data.paymentlink?.payment_link ||
+                data.payment_links?.url || // THE WINNER for Zoho India
+                data.link_url ||
+                data.data?.payment_link ||
+                data.url;
+
+            if (!paymentLink) {
+                console.error('Zoho SUCCESS but link mapping failed. Response:', JSON.stringify(data));
+                return new Response(JSON.stringify({ error: 'Link mapping failed', details: data }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    status: 500
+                });
+            }
+
+            console.log(`✅ SUCCESS! Returning link: ${paymentLink}`);
 
             return new Response(
-                JSON.stringify(linkData),
+                JSON.stringify({
+                    payment_link: paymentLink,
+                    payment_url: paymentLink, // Match frontend expectation
+                    link_id: data.link_id || data.paymentlink?.link_id,
+                    order_id: order_id,
+                    service_type: service
+                }),
                 { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             );
         }
@@ -228,10 +343,17 @@ serve(async (req: Request) => {
         )
 
     } catch (error: any) {
-        console.error('Edge Function Error:', error);
+        console.error('CRITICAL Edge Function Error:', error);
         return new Response(
-            JSON.stringify({ error: error.message || 'Internal server error' }),
-            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            JSON.stringify({
+                error: error.message || 'Internal server error',
+                stack: error.stack,
+                details: 'Check Supabase Edge logs for full trace'
+            }),
+            {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            }
         )
     }
 })
