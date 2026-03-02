@@ -185,8 +185,7 @@ const Register = () => {
         setVerificationEmail(session.user.email);
         setEmailStep('verified');
         setPersonalInfo(prev => ({ ...prev, email: session.user.email || '' }));
-        toast({ title: 'Signed In!', description: 'Please enter your unique key.', variant: 'success' });
-        setCurrentStep(2);
+        toast({ title: 'Signed In!', description: 'Welcome back!', variant: 'success' });
       } else if (event === 'SIGNED_OUT') {
         setVerificationEmail('');
         setEmailStep('pending');
@@ -197,6 +196,23 @@ const Register = () => {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (emailStep === 'verified' && currentStep === 1 && selectedEventId && events.length > 0) {
+      const event = events.find(e => e.id === selectedEventId);
+      const isEventFree = event?.is_payment_enabled === false || !event?.registration_fee || Number(event?.registration_fee) <= 0;
+
+      if (isEventFree) {
+        if (role || event?.event_type === 'school' || event?.event_type === 'college') {
+          setCurrentStep(4);
+        } else {
+          setCurrentStep(3);
+        }
+      } else {
+        setCurrentStep(2);
+      }
+    }
+  }, [emailStep, selectedEventId, events, role, currentStep]);
 
   useEffect(() => {
     const autoFetchKey = async () => {
@@ -252,11 +268,6 @@ const Register = () => {
         const generatedKey = generateUniqueKey();
         setUniqueKey(generatedKey);
         setIsKeyVerified(true);
-        toast({ 
-          title: 'Key Generated', 
-          description: `A unique key ${generatedKey} has been generated for your free registration.`, 
-          variant: 'success' 
-        });
         return true;
       }
       toast({ title: 'Key Required', description: 'Please enter your unique key/OTP.', variant: 'destructive' });
