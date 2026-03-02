@@ -102,7 +102,7 @@ serve(async (req: Request) => {
     }
 
     try {
-        const { action, amount, currency = 'INR', customer_id, order_id } = await req.json();
+        const { action, amount, currency = 'INR', customer_id, order_id, email } = await req.json();
         const orgId = Deno.env.get('ZOHO_USER_ID');
 
         if (action === 'create-link') {
@@ -113,7 +113,7 @@ serve(async (req: Request) => {
                 amount: parseFloat(amount),
                 currency_code: currency,
                 organization_id: orgId,
-                email: 'customer@storyseed.in',
+                email: email || 'customer@storyseed.in',
                 return_url: `${req.headers.get('origin')}/pay-event/${order_id}?status=success`,
                 reference_id: `${order_id}_${Date.now()}`,
                 description: `Payment for Event ${order_id}`

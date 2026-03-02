@@ -149,7 +149,8 @@ const PaymentPortal = () => {
           action: 'create-link',
           amount: event.registration_fee,
           customer_id: authSession.user.id,
-          order_id: eventId
+          order_id: eventId,
+          email: authSession.user.email
         },
       });
 

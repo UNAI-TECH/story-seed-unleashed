@@ -381,23 +381,55 @@ const Register = () => {
       let registrationId = '';
 
       if (uniqueKey) {
-        // 1. Update basic details for existing key
-        const { error: updateError } = await supabase
-          .from(tableName)
-          .update(registrationData)
-          .eq('unique_key', uniqueKey.toUpperCase());
-
-        if (updateError) throw updateError;
-
-        const { data: record } = await supabase
+        // 1. Check if the key already exists in the database
+        const { data: existingRecord } = await supabase
           .from(tableName)
           .select('id')
           .eq('unique_key', uniqueKey.toUpperCase())
-          .single();
+          .maybeSingle();
 
-        if (record) registrationId = record.id;
+        if (existingRecord) {
+          // Update basic details for existing key
+          const { error: updateError } = await supabase
+            .from(tableName)
+            .update(registrationData)
+            .eq('unique_key', uniqueKey.toUpperCase());
+
+          if (updateError) throw updateError;
+          registrationId = existingRecord.id;
+        } else if (isFree) {
+          // If key doesn't exist but it's a free event, insert it
+          const insertData: any = {
+            ...registrationData,
+            event_id: selectedEventId,
+            user_id: authenticatedUserId,
+            first_name: personalInfo.firstName,
+            last_name: personalInfo.lastName,
+            email: personalInfo.email,
+            phone: personalInfo.phone,
+            age: parseInt(personalInfo.age),
+            city: personalInfo.city,
+            payment_status: 'paid', // Free events are always 'paid'
+            unique_key: uniqueKey.toUpperCase(),
+          };
+
+          if (role === 'college') {
+            insertData.college_name = personalInfo.collegeName;
+            insertData.degree = personalInfo.degree;
+            insertData.branch = personalInfo.branch;
+          }
+
+          const { data: record, error: insertError } = await supabase
+            .from(tableName)
+            .insert(insertData)
+            .select('id')
+            .maybeSingle();
+
+          if (insertError) throw insertError;
+          if (record) registrationId = record.id;
+        }
       } else if (isFree) {
-        // 2. Insert new record for free event
+        // 2. Insert new record for free event without a key
         const newKey = generateUniqueKey();
         const insertData: any = {
           ...registrationData,
@@ -423,7 +455,7 @@ const Register = () => {
           .from(tableName)
           .insert(insertData)
           .select('id')
-          .single();
+          .maybeSingle();
 
         if (insertError) throw insertError;
         if (record) registrationId = record.id;
