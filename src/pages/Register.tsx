@@ -21,7 +21,6 @@ interface Event {
   name: string;
   description: string | null;
   is_payment_enabled: boolean;
-  qr_code_url: string | null;
   event_type: 'school' | 'college' | 'both' | null;
   registration_open: boolean;
   registration_start_date: string | null;
@@ -142,7 +141,7 @@ const Register = () => {
       const { data: eventsData, error: eventsError } = await supabase
         .from('events')
         .select(`
-          id, name, description, is_payment_enabled, qr_code_url, 
+          id, name, description, is_payment_enabled, 
           event_type, registration_open, registration_start_date, 
           registration_deadline, payment_deadline, registration_fee
         `)

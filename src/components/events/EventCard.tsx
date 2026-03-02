@@ -39,9 +39,9 @@ export const EventCard = ({ event, index = 0 }: EventCardProps) => {
         return startDate;
     };
 
-    const isFree = !event.registration_fee || event.registration_fee <= 0;
+    const isFree = !event.is_payment_enabled || !event.registration_fee || event.registration_fee <= 0;
 
-    const isPayEnabled = (event.is_payment_enabled || !isFree) &&
+    const isPayEnabled = !isFree &&
         (!event.payment_deadline || now < new Date(event.payment_deadline));
 
     const isRegEnabled = event.registration_open ||

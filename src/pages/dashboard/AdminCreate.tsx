@@ -17,8 +17,7 @@ const AdminCreate = () => {
 
   // Payment state
   const [paymentEnabled, setPaymentEnabled] = useState(false);
-  const [qrFile, setQrFile] = useState<File | null>(null);
-  const [qrPreview, setQrPreview] = useState<string | null>(null);
+  const [registrationFee, setRegistrationFee] = useState<number>(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const qrInputRef = useRef<HTMLInputElement>(null);
@@ -47,17 +46,7 @@ const AdminCreate = () => {
     }
   };
 
-  const handleQrChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setQrFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setQrPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
+
 
   const removeBanner = () => {
     setBannerFile(null);
@@ -67,13 +56,7 @@ const AdminCreate = () => {
     }
   };
 
-  const removeQr = () => {
-    setQrFile(null);
-    setQrPreview(null);
-    if (qrInputRef.current) {
-      qrInputRef.current.value = '';
-    }
-  };
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,35 +98,7 @@ const AdminCreate = () => {
         }
       }
 
-      // Upload QR image if selected
-      if (paymentEnabled && qrFile) {
-        try {
-          const fileExt = qrFile.name.split('.').pop();
-          const fileName = `qr-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
-          const { error: uploadError } = await supabase.storage
-            .from('payment-qr-codes')
-            .upload(fileName, qrFile);
-
-          if (uploadError) {
-            console.warn('QR upload failed, continuing without QR:', uploadError);
-            toast({
-              title: 'QR Upload Failed',
-              description: 'Event created but QR code was not uploaded. You can add it later via Edit.',
-              variant: 'default'
-            });
-          } else {
-            const { data: urlData } = supabase.storage
-              .from('payment-qr-codes')
-              .getPublicUrl(fileName);
-
-            qrUrl = urlData.publicUrl;
-          }
-        } catch (qrError) {
-          console.warn('QR upload error:', qrError);
-          // Continue without QR code
-        }
-      }
 
       // Insert event into database
       const deadlineDateTime = formData.deadlineDate && formData.deadlineTime
@@ -161,7 +116,7 @@ const AdminCreate = () => {
           banner_image: bannerUrl,
           is_active: true,
           is_payment_enabled: paymentEnabled,
-          qr_code_url: qrUrl,
+          registration_fee: registrationFee,
           event_type: participationType
         });
 
@@ -178,8 +133,7 @@ const AdminCreate = () => {
       setBannerFile(null);
       setBannerPreview(null);
       setPaymentEnabled(false);
-      setQrFile(null);
-      setQrPreview(null);
+      setRegistrationFee(0);
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -312,38 +266,19 @@ const AdminCreate = () => {
           </div>
 
           {paymentEnabled && (
-            <div className="space-y-2 animate-fade-in">
-              <label className="text-sm font-medium">Payment QR Code <span className="text-muted-foreground font-normal">(Optional - can add later)</span></label>
-              {qrPreview ? (
-                <div className="relative rounded-xl overflow-hidden w-48 h-48 mx-auto bg-muted">
-                  <img src={qrPreview} alt="QR preview" className="w-full h-full object-contain" />
-                  <button
-                    type="button"
-                    onClick={removeQr}
-                    className="absolute top-2 right-2 p-1 bg-destructive text-destructive-foreground rounded-full"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              ) : (
-                <div
-                  className="border-2 border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-primary transition-colors max-w-sm mx-auto"
-                  onClick={() => qrInputRef.current?.click()}
-                >
-                  <div className="w-12 h-12 mx-auto bg-muted rounded-full flex items-center justify-center mb-3">
-                    <Upload className="w-6 h-6 text-muted-foreground" />
-                  </div>
-                  <p className="text-sm font-medium">Upload QR Code</p>
-                  <p className="text-xs text-muted-foreground">Image to be shown in Scan & Pay</p>
-                </div>
-              )}
-              <input
-                ref={qrInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleQrChange}
-                className="hidden"
-              />
+            <div className="space-y-3 pl-7 animate-fade-in">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Registration Fee (₹)</label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={registrationFee || ''}
+                  onChange={(e) => setRegistrationFee(parseFloat(e.target.value) || 0)}
+                  placeholder="Enter amount (e.g., 99)"
+                />
+                <p className="text-xs text-muted-foreground">This amount will be charged via Zoho Payments.</p>
+              </div>
             </div>
           )}
 
