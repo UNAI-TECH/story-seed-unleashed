@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { Smartphone, QrCode, ArrowRight, Loader2, Check, School, GraduationCap, Copy } from 'lucide-react';
+import { Smartphone, QrCode, ArrowRight, Loader2, Check, School, GraduationCap, Copy, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -236,8 +236,22 @@ const PaymentPortal = () => {
       }
 
       setUniqueKey(key);
-      setStep(3);
-      toast({ title: 'Success', description: 'Payment successful! Registration complete.', });
+
+      // Dynamic Redirection Logic
+      const now = new Date();
+      const isRegOpen = event.registration_open ||
+        (event.registration_start_date && now > new Date(event.registration_start_date));
+
+      if (isRegOpen) {
+        toast({ title: 'Success', description: 'Redirecting to story submission...', });
+        // Small delay so they see the success message
+        setTimeout(() => {
+          navigate(`/register?eventId=${eventId}&key=${key}`);
+        }, 1500);
+      } else {
+        setStep(3);
+        toast({ title: 'Success', description: 'Payment successful! Unique key generated.', });
+      }
     } catch (error: any) {
       console.error('DB Insert Error:', error);
       toast({ title: 'Registration Failed', description: error.message + ' (Payment was successful, please contact support)', variant: 'destructive' });
@@ -439,7 +453,7 @@ const PaymentPortal = () => {
               </div>
               <div>
                 <h2 className="text-3xl font-bold mb-2">Payment Successful!</h2>
-                <p className="text-muted-foreground">Your transaction has been recorded and is pending verification.</p>
+                <p className="text-muted-foreground">Your unique registration key has been generated.</p>
               </div>
 
               <div className="bg-primary/5 border border-primary/20 rounded-3xl p-8 space-y-4">
@@ -461,13 +475,54 @@ const PaymentPortal = () => {
                     Copy Key
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">Please save this key safely. You will need it to submit your story once registration opens.</p>
+                <p className="text-xs text-muted-foreground">Please save this key safely. You will need it to submit your story.</p>
               </div>
 
-              <div className="space-y-4">
+              {(() => {
+                const now = new Date();
+                const isRegOpen = event.registration_open ||
+                  (event.registration_start_date && now > new Date(event.registration_start_date));
+
+                if (!isRegOpen) {
+                  return (
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-amber-900">
+                      <div className="flex items-center justify-center gap-2 mb-2 font-bold">
+                        <Clock className="w-5 h-5" />
+                        Portal Not Yet Open
+                      </div>
+                      <p className="text-sm">
+                        The registration portal is scheduled to open on:
+                        <br />
+                        <span className="font-bold">
+                          {event.registration_start_date ? new Date(event.registration_start_date).toLocaleDateString('en-IN', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          }) : 'TBA'}
+                        </span>
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <Button
+                    onClick={() => navigate(`/register?eventId=${eventId}&key=${uniqueKey}`)}
+                    className="w-full h-14 bg-green-600 hover:bg-green-700 text-white text-lg font-bold rounded-2xl"
+                  >
+                    Submit My Story Now
+                    <ArrowRight className="w-6 h-6 ml-2" />
+                  </Button>
+                );
+              })()}
+
+              <div className="space-y-4 pt-4">
                 <Button
                   onClick={() => navigate('/dashboard')}
-                  className="w-full h-14 bg-primary text-white text-lg font-bold rounded-2xl"
+                  variant="outline"
+                  className="w-full h-12 rounded-xl"
                 >
                   Go to Dashboard
                 </Button>
