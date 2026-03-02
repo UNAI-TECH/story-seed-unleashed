@@ -6,6 +6,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -36,7 +38,7 @@ interface Event {
   is_payment_enabled: boolean | null;
   payment_deadline: string | null;
   registration_start_date: string | null;
-  qr_code_url: string | null;
+  qr_code_url?: string | null;
   voting_open: boolean | null;
   event_type: 'school' | 'college' | 'both' | null;
   registration_fee: number | null;
@@ -57,8 +59,6 @@ const AdminCompetitions = () => {
     runner_up_id: '',
     second_runner_up_id: '',
   });
-  const [qrCodeFile, setQrCodeFile] = useState<File | null>(null);
-  const [uploadingQr, setUploadingQr] = useState(false);
   const { toast } = useToast();
 
   const fetchEvents = async () => {
@@ -170,35 +170,6 @@ const AdminCompetitions = () => {
     if (!editEvent) return;
 
     try {
-      let qrCodeUrl = editEvent.qr_code_url;
-
-      // Upload QR code if a new file is selected
-      if (qrCodeFile) {
-        setUploadingQr(true);
-        const fileExt = qrCodeFile.name.split('.').pop();
-        const fileName = `qr-${editEvent.id}-${Date.now()}.${fileExt}`;
-
-        // Upload to Supabase storage
-        const { error: uploadError } = await supabase.storage
-          .from('payment-qr-codes')
-          .upload(fileName, qrCodeFile, { upsert: true });
-
-        if (uploadError) throw uploadError;
-
-        // Get public URL
-        const { data: urlData } = supabase.storage
-          .from('payment-qr-codes')
-          .getPublicUrl(fileName);
-
-        qrCodeUrl = urlData.publicUrl;
-        setUploadingQr(false);
-      }
-
-      // If payment is disabled, clear the QR code URL
-      if (!editEvent.is_payment_enabled) {
-        qrCodeUrl = null;
-      }
-
       const { error } = await supabase
         .from('events')
         .update({
@@ -212,7 +183,6 @@ const AdminCompetitions = () => {
           payment_deadline: editEvent.payment_deadline,
           registration_start_date: editEvent.registration_start_date,
           registration_fee: editEvent.registration_fee,
-          qr_code_url: qrCodeUrl,
         })
         .eq('id', editEvent.id);
 
@@ -220,10 +190,8 @@ const AdminCompetitions = () => {
 
       toast({ title: 'Event Updated', description: 'Competition has been updated successfully.' });
       setEditEvent(null);
-      setQrCodeFile(null);
     } catch (error: any) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
-      setUploadingQr(false);
     }
   };
 
@@ -542,14 +510,13 @@ const AdminCompetitions = () => {
                   rows={3}
                 />
               </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={editEvent.is_active || false}
-                  onChange={(e) => setEditEvent({ ...editEvent, is_active: e.target.checked })}
+              <div className="flex items-center space-x-2">
+                <Switch
                   id="is_active"
+                  checked={editEvent.is_active || false}
+                  onCheckedChange={(checked) => setEditEvent({ ...editEvent, is_active: checked })}
                 />
-                <label htmlFor="is_active" className="text-sm">Active</label>
+                <Label htmlFor="is_active" className="text-sm font-medium cursor-pointer">Active</Label>
               </div>
 
               <div className="grid grid-cols-2 gap-4 border-t pt-4">
@@ -580,32 +547,29 @@ const AdminCompetitions = () => {
                   <h3 className="font-semibold text-foreground">Payment Settings</h3>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={editEvent.is_payment_enabled || false}
-                    onChange={(e) => {
-                      setEditEvent({ ...editEvent, is_payment_enabled: e.target.checked });
-                      if (!e.target.checked) {
-                        setQrCodeFile(null);
-                      }
-                    }}
+                <div className="flex items-center space-x-2">
+                  <Switch
                     id="is_payment_enabled"
+                    checked={editEvent.is_payment_enabled || false}
+                    onCheckedChange={(checked) => {
+                      setEditEvent({ ...editEvent, is_payment_enabled: checked });
+                    }}
                   />
-                  <label htmlFor="is_payment_enabled" className="text-sm font-medium">
+                  <Label htmlFor="is_payment_enabled" className="text-sm font-medium cursor-pointer">
                     Manual Payment Portal Override
-                  </label>
+                  </Label>
                 </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={editEvent.registration_open || false}
-                    onChange={(e) => setEditEvent({ ...editEvent, registration_open: e.target.checked })}
+                <div className="flex items-center space-x-2">
+                  <Switch
                     id="registration_open"
+                    checked={editEvent.registration_open || false}
+                    onCheckedChange={(checked) => {
+                      setEditEvent({ ...editEvent, registration_open: checked });
+                    }}
                   />
-                  <label htmlFor="registration_open" className="text-sm font-medium">
+                  <Label htmlFor="registration_open" className="text-sm font-medium cursor-pointer">
                     Manual Registration Portal Override
-                  </label>
+                  </Label>
                 </div>
 
                 {editEvent.is_payment_enabled && (
@@ -617,7 +581,7 @@ const AdminCompetitions = () => {
                         min="0"
                         step="1"
                         value={editEvent.registration_fee || ''}
-                        onChange={(e) => setEditEvent({ ...editEvent, registration_fee: parseFloat(e.target.value) || null })}
+                        onChange={(e) => setEditEvent({ ...editEvent, registration_fee: parseFloat(e.target.value) || 0 })}
                         placeholder="Enter amount (e.g., 99)"
                       />
                       <p className="text-xs text-muted-foreground">This amount will be charged via Zoho Payments.</p>
@@ -627,18 +591,9 @@ const AdminCompetitions = () => {
               </div>
 
               <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => { setEditEvent(null); setQrCodeFile(null); }}>Cancel</Button>
-                <Button variant="hero" onClick={handleUpdate} disabled={uploadingQr}>
-                  {uploadingQr ? (
-                    <>
-                      <div className="w-4 h-4 mr-1 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Uploading...
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4 mr-1" />Save
-                    </>
-                  )}
+                <Button variant="outline" onClick={() => { setEditEvent(null); }}>Cancel</Button>
+                <Button variant="hero" onClick={handleUpdate}>
+                  <Check className="w-4 h-4 mr-1" />Save
                 </Button>
               </div>
             </div>
