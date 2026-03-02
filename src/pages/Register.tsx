@@ -27,6 +27,7 @@ interface Event {
   registration_start_date: string | null;
   registration_deadline: string | null;
   payment_deadline: string | null;
+  registration_fee: number | null;
 }
 
 const steps = [
@@ -62,6 +63,7 @@ const getSessionId = (): string => {
 const Register = () => {
   const [searchParams] = useSearchParams();
   const eventIdFromUrl = searchParams.get('eventId');
+  const isFreeFromUrl = searchParams.get('isFree') === 'true';
 
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [isComplete, setIsComplete] = useState(false);
@@ -69,6 +71,13 @@ const Register = () => {
   const [events, setEvents] = useState<Event[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>(eventIdFromUrl || '');
   const [isEventLocked, setIsEventLocked] = useState(!!eventIdFromUrl);
+
+  const selectedEvent = events.find(e => e.id === selectedEventId);
+  const isFree = isFreeFromUrl || (selectedEvent ? (
+    selectedEvent.is_payment_enabled === false ||
+    !selectedEvent.registration_fee ||
+    Number(selectedEvent.registration_fee) <= 0
+  ) : false);
 
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'initializing' | 'uploading' | 'processing' | 'complete' | 'error'>('idle');
@@ -132,7 +141,11 @@ const Register = () => {
     const fetchData = async () => {
       const { data: eventsData, error: eventsError } = await supabase
         .from('events')
-        .select('id, name, description, is_payment_enabled, qr_code_url, event_type, registration_open, registration_start_date, registration_deadline, payment_deadline')
+        .select(`
+          id, name, description, is_payment_enabled, qr_code_url, 
+          event_type, registration_open, registration_start_date, 
+          registration_deadline, payment_deadline, registration_fee
+        `)
         .eq('is_active', true);
 
       if (!eventsError && eventsData) {
@@ -248,6 +261,11 @@ const Register = () => {
 
     const existingKey = reg || clgReg;
     if (!existingKey) {
+      if (isFree) {
+        setIsKeyVerified(true);
+        // If not verified key, but is free, we'll collect info in step 4
+        return true;
+      }
       toast({ title: 'Invalid Key', description: 'This key is invalid.', variant: 'destructive' });
       return false;
     }
@@ -268,7 +286,15 @@ const Register = () => {
 
   const validateStep4 = () => {
     const { title, category, classLevel, description, guardianName, guardianPhone } = storyDetails;
+    const { firstName, lastName, phone, age, city } = personalInfo;
     const isSchool = role === 'school';
+
+    if (isFree && !uniqueKey) {
+      if (!firstName || !lastName || !phone || !age || !city) {
+        toast({ title: 'Missing personal details', description: 'Please complete your profile.', variant: 'destructive' });
+        return false;
+      }
+    }
 
     if (!title || !category || !description) {
       toast({ title: 'Missing details', description: 'Please complete all fields.', variant: 'destructive' });
@@ -309,28 +335,77 @@ const Register = () => {
     }
   };
 
+  const generateUniqueKey = () => {
+    return Math.random().toString(36).substring(2, 10).toUpperCase();
+  };
+
   const submitRegistration = async () => {
     setIsSubmitting(true);
     try {
       const tableName = role === 'college' ? 'clg_registrations' : 'registrations';
 
-      const updateData: any = {
+      const registrationData: any = {
         story_title: storyDetails.title,
         category: storyDetails.category,
         story_description: storyDetails.description,
       };
 
       if (role === 'school') {
-        updateData.class_level = storyDetails.classLevel;
+        registrationData.class_level = storyDetails.classLevel;
       }
 
-      // 1. Update basic details
-      const { error: updateError } = await supabase
-        .from(tableName)
-        .update(updateData)
-        .eq('unique_key', uniqueKey.toUpperCase());
+      let registrationId = '';
 
-      if (updateError) throw updateError;
+      if (uniqueKey) {
+        // 1. Update basic details for existing key
+        const { error: updateError } = await supabase
+          .from(tableName)
+          .update(registrationData)
+          .eq('unique_key', uniqueKey.toUpperCase());
+
+        if (updateError) throw updateError;
+
+        const { data: record } = await supabase
+          .from(tableName)
+          .select('id')
+          .eq('unique_key', uniqueKey.toUpperCase())
+          .single();
+
+        if (record) registrationId = record.id;
+      } else if (isFree) {
+        // 2. Insert new record for free event
+        const newKey = generateUniqueKey();
+        const insertData: any = {
+          ...registrationData,
+          event_id: selectedEventId,
+          user_id: authenticatedUserId,
+          first_name: personalInfo.firstName,
+          last_name: personalInfo.lastName,
+          email: personalInfo.email,
+          phone: personalInfo.phone,
+          age: parseInt(personalInfo.age),
+          city: personalInfo.city,
+          payment_status: 'paid', // Free events are always 'paid'
+          unique_key: newKey,
+        };
+
+        if (role === 'college') {
+          insertData.college_name = personalInfo.collegeName;
+          insertData.degree = personalInfo.degree;
+          insertData.branch = personalInfo.branch;
+        }
+
+        const { data: record, error: insertError } = await supabase
+          .from(tableName)
+          .insert(insertData)
+          .select('id')
+          .single();
+
+        if (insertError) throw insertError;
+        if (record) registrationId = record.id;
+      }
+
+      if (!registrationId) throw new Error("Could not determine registration ID");
 
       // 1b. Update profile details for school events (guardian info & grade)
       if (role === 'school' && authenticatedUserId) {
@@ -345,21 +420,15 @@ const Register = () => {
       }
 
       // 2. Handle File Uploads
-      const { data: record } = await supabase
-        .from(tableName)
-        .select('id')
-        .eq('unique_key', uniqueKey.toUpperCase())
-        .single();
-
-      if (record?.id) {
+      if (registrationId) {
         if (role === 'school' && storyDetails.videoFile) {
-          await uploadVideoToSupabase(storyDetails.videoFile, record.id);
+          await uploadVideoToSupabase(storyDetails.videoFile, registrationId);
         } else if (role === 'college' && storyDetails.storyPdf) {
-          const fileName = `${record.id}-${Date.now()}.pdf`;
+          const fileName = `${registrationId}-${Date.now()}.pdf`;
           const { error: uploadError } = await supabase.storage.from('college-story-pdfs').upload(fileName, storyDetails.storyPdf);
           if (!uploadError) {
             const pdfUrl = supabase.storage.from('college-story-pdfs').getPublicUrl(fileName).data.publicUrl;
-            await supabase.from('clg_registrations').update({ pdf_url: pdfUrl }).eq('id', record.id);
+            await supabase.from('clg_registrations').update({ pdf_url: pdfUrl }).eq('id', registrationId);
           }
         }
       }
@@ -396,10 +465,26 @@ const Register = () => {
   };
 
   const handleNext = async () => {
-    if (currentStep === 1) { if (validateStep1()) setCurrentStep(2); return; }
+    const event = events.find(e => e.id === selectedEventId);
+    const isFree = event?.is_payment_enabled === false;
+
+    if (currentStep === 1) {
+      if (validateStep1()) {
+        if (isFree) {
+          // Skip Step 2
+          if (role || event?.event_type === 'school' || event?.event_type === 'college') {
+            setCurrentStep(4);
+          } else {
+            setCurrentStep(3);
+          }
+        } else {
+          setCurrentStep(2);
+        }
+      }
+      return;
+    }
     if (currentStep === 2) {
       if (await validateStep2()) {
-        const event = events.find(e => e.id === selectedEventId);
         // If role is already set (e.g. from auto-fetch or previous step), skip role selection
         if (role) {
           setCurrentStep(4);
@@ -416,7 +501,25 @@ const Register = () => {
     if (currentStep === 5) await submitRegistration();
   };
 
-  const handlePrev = () => { if (currentStep > 1) setCurrentStep(currentStep - 1); };
+  const handlePrev = () => {
+    if (currentStep > 1) {
+      const event = events.find(e => e.id === selectedEventId);
+      const isFree = event?.is_payment_enabled === false;
+
+      if (currentStep === 4 && isFree) {
+        // Decide if we go back to 3 or 1
+        if (event?.event_type === 'school' || event?.event_type === 'college') {
+          setCurrentStep(1);
+        } else {
+          setCurrentStep(3);
+        }
+      } else if (currentStep === 3 && isFree) {
+        setCurrentStep(1);
+      } else {
+        setCurrentStep(currentStep - 1);
+      }
+    }
+  };
 
   if (isComplete) {
     return (
@@ -441,12 +544,22 @@ const Register = () => {
       <div className="container mx-auto px-4 py-12 max-w-2xl">
         <div className="text-center mb-10">
           <h1 className="text-4xl font-bold mb-4">Join the Competition</h1>
-          <p className="text-muted-foreground">Complete your registration in {steps.filter(s => s.id !== 3 || !role).length} steps</p>
+          <p className="text-muted-foreground">
+            Complete your registration in {
+              steps.filter(s =>
+                (s.id !== 3 || !role) &&
+                (s.id !== 2 || !isFree)
+              ).length
+            } steps
+          </p>
         </div>
 
         <div className="relative mb-8 pb-10">
           <div className="flex justify-between relative z-10">
-            {steps.filter(s => s.id !== 3 || !role).map(s => (
+            {steps.filter(s =>
+              (s.id !== 3 || !role) &&
+              (s.id !== 2 || !isFree)
+            ).map((s, idx, filtered) => (
               <div key={s.id} className="flex flex-col items-center">
                 <div className={cn("w-10 h-10 rounded-full flex items-center justify-center transition-colors shadow-sm", currentStep >= s.id ? "bg-primary text-white" : "bg-muted text-muted-foreground")}>
                   {currentStep > s.id ? <Check className="w-5 h-5" /> : <s.icon className="w-5 h-5" />}
@@ -458,7 +571,16 @@ const Register = () => {
           <div className="absolute top-5 left-0 right-0 h-0.5 bg-muted -z-0">
             <div
               className="h-full bg-primary transition-all duration-300"
-              style={{ width: `${((currentStep - 1) / (steps.filter(s => s.id !== 3 || !role).length - 1)) * 100}%` }}
+              style={{
+                width: (() => {
+                  const filteredSteps = steps.filter(s =>
+                    (s.id !== 3 || !role) &&
+                    (s.id !== 2 || !isFree)
+                  );
+                  const currentIndex = filteredSteps.findIndex(s => s.id === currentStep);
+                  return `${(currentIndex / (filteredSteps.length - 1)) * 100}%`;
+                })()
+              }}
             />
           </div>
         </div>
@@ -550,7 +672,7 @@ const Register = () => {
                     <div className="bg-green-50 p-4 rounded-xl flex items-center gap-3 border border-green-100">
                       <Check className="text-green-600" />
                       <span className="font-medium">{verificationEmail}</span>
-                      <Button onClick={() => setCurrentStep(2)} className="ml-auto">Next</Button>
+                      <Button onClick={handleNext} className="ml-auto">Next</Button>
                     </div>
                   )}
                 </div>
@@ -565,7 +687,11 @@ const Register = () => {
                   </div>
                   <div className="flex gap-4">
                     <Button onClick={handlePrev} variant="ghost">Back</Button>
-                    <Button onClick={handleNext} disabled={!uniqueKey} className="flex-1 h-12">Verify & Continue</Button>
+                    {isFree && !uniqueKey ? (
+                      <Button onClick={handleNext} className="flex-1 h-12 bg-gradient-to-r from-green-600 to-emerald-600">Register for Free</Button>
+                    ) : (
+                      <Button onClick={handleNext} disabled={!uniqueKey} className="flex-1 h-12">Verify & Continue</Button>
+                    )}
                   </div>
                 </div>
               )}
@@ -590,6 +716,53 @@ const Register = () => {
 
               {currentStep === 4 && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+                  {(isFree && !uniqueKey) && (
+                    <div className="space-y-4 pb-6 border-b border-border/50">
+                      <h2 className="text-2xl font-bold">Personal Details</h2>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>First Name</Label>
+                          <Input value={personalInfo.firstName} onChange={e => setPersonalInfo(p => ({ ...p, firstName: e.target.value }))} placeholder="John" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Last Name</Label>
+                          <Input value={personalInfo.lastName} onChange={e => setPersonalInfo(p => ({ ...p, lastName: e.target.value }))} placeholder="Doe" />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Phone Number</Label>
+                        <Input value={personalInfo.phone} onChange={e => setPersonalInfo(p => ({ ...p, phone: e.target.value }))} placeholder="+91..." />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Age</Label>
+                          <Input type="number" value={personalInfo.age} onChange={e => setPersonalInfo(p => ({ ...p, age: e.target.value }))} placeholder="18" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>City</Label>
+                          <Input value={personalInfo.city} onChange={e => setPersonalInfo(p => ({ ...p, city: e.target.value }))} placeholder="Bangalore" />
+                        </div>
+                      </div>
+                      {role === 'college' && (
+                        <div className="space-y-4 pt-2">
+                          <div className="space-y-2">
+                            <Label>College Name</Label>
+                            <Input value={personalInfo.collegeName} onChange={e => setPersonalInfo(p => ({ ...p, collegeName: e.target.value }))} placeholder="Enter your college" />
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label>Degree</Label>
+                              <Input value={personalInfo.degree} onChange={e => setPersonalInfo(p => ({ ...p, degree: e.target.value }))} placeholder="B.E. / B.Tech" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Branch</Label>
+                              <Input value={personalInfo.branch} onChange={e => setPersonalInfo(p => ({ ...p, branch: e.target.value }))} placeholder="CSE / ECE" />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <h2 className="text-2xl font-bold">Story Details</h2>
                   <div className="space-y-2"><Label>Story Title</Label><Input value={storyDetails.title} onChange={e => setStoryDetails(s => ({ ...s, title: e.target.value }))} /></div>
                   <div className="space-y-2">
