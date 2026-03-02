@@ -248,6 +248,17 @@ const Register = () => {
 
   const validateStep2 = async () => {
     if (!uniqueKey) {
+      if (isFree) {
+        const generatedKey = generateUniqueKey();
+        setUniqueKey(generatedKey);
+        setIsKeyVerified(true);
+        toast({ 
+          title: 'Key Generated', 
+          description: `A unique key ${generatedKey} has been generated for your free registration.`, 
+          variant: 'success' 
+        });
+        return true;
+      }
       toast({ title: 'Key Required', description: 'Please enter your unique key/OTP.', variant: 'destructive' });
       return false;
     }
@@ -263,7 +274,9 @@ const Register = () => {
     if (!existingKey) {
       if (isFree) {
         setIsKeyVerified(true);
-        // If not verified key, but is free, we'll collect info in step 4
+        // If they entered a key but it's not found, but it's a free event, we'll still allow it 
+        // to collect info, but maybe they typoed. 
+        // For now, let's just allow it if it's free.
         return true;
       }
       toast({ title: 'Invalid Key', description: 'This key is invalid.', variant: 'destructive' });
