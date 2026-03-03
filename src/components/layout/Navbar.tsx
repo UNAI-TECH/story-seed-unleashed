@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input';
 import { SearchBar } from '@/components/ui/search-bar';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, getSafeImageUrl } from '@/integrations/supabase/client';
+
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 interface Event {
@@ -271,7 +272,8 @@ export const Navbar = () => {
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-2 p-1 rounded-full hover:bg-muted transition-colors">
                   <Avatar className="w-9 h-9">
-                    <AvatarImage src={user.avatar || undefined} alt={user.name} />
+                    <AvatarImage src={getSafeImageUrl(user.avatar || undefined)} alt={user.name} />
+
                     <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
                       {user.name?.charAt(0)?.toUpperCase() || 'U'}
                     </AvatarFallback>
@@ -320,7 +322,8 @@ export const Navbar = () => {
                 <>
                   <div className="flex items-center gap-3 px-4 py-2">
                     <Avatar className="w-10 h-10">
-                      <AvatarImage src={user.avatar || undefined} alt={user.name} />
+                      <AvatarImage src={getSafeImageUrl(user.avatar || undefined)} alt={user.name} />
+
                       <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
                         {user.name?.charAt(0)?.toUpperCase() || 'U'}
                       </AvatarFallback>

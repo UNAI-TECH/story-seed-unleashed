@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Save, Loader2, Bell } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, getSafeImageUrl } from '@/integrations/supabase/client';
+
 import { useToast } from '@/hooks/use-toast';
 
 interface ProfileData {
@@ -112,14 +113,15 @@ const JudgeProfile = () => {
   return (
     <div className="space-y-6 page-enter max-w-2xl">
       <h1 className="font-display text-2xl font-bold text-foreground">Judge Profile</h1>
-      
+
       <div className="bg-card p-6 rounded-2xl border border-border/50 space-y-6">
         <div className="flex items-center gap-4">
           <img
-            src={user?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id}`}
+            src={getSafeImageUrl(user?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id}`)}
             alt={user?.name}
             className="w-20 h-20 rounded-full object-cover border-4 border-secondary/20"
           />
+
           <div>
             <h2 className="font-display text-xl font-semibold text-foreground">{profile.name || user?.name}</h2>
             <p className="text-secondary font-medium">Judge</p>
@@ -185,7 +187,7 @@ const JudgeProfile = () => {
           <Bell className="w-5 h-5 text-primary" />
           <h3 className="font-display text-lg font-semibold">Notification Settings</h3>
         </div>
-        
+
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-4 border border-border/40 rounded-xl p-4">
             <div>

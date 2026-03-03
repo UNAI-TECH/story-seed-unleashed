@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Save, Loader2 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, getSafeImageUrl } from '@/integrations/supabase/client';
+
 import { useToast } from '@/hooks/use-toast';
 
 interface ProfileData {
@@ -147,10 +148,11 @@ const UserProfile = () => {
       <div className="w-full max-w-3xl bg-card p-6 rounded-2xl border border-border/50 shadow-sm">
         <div className="flex items-center gap-4 mb-6">
           <img
-            src={profile.avatar || user?.avatar}
+            src={getSafeImageUrl(profile.avatar || user?.avatar)}
             alt={profile.name || user?.name}
             className="w-20 h-20 rounded-full object-cover border-4 border-primary/20"
           />
+
           <div>
             <h2 className="font-display text-xl font-semibold text-foreground">
               {profile.name || user?.name}

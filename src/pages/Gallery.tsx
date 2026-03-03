@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { X, ArrowLeft, Star, Calendar, Users, Trophy, Award, Image as ImageIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, getSafeImageUrl } from '@/integrations/supabase/client';
+
 
 const galleryCategories = ['All', 'Events', 'Performers', 'Sessions', 'Awards'];
 
@@ -74,10 +75,11 @@ const Gallery = () => {
           {/* Header Image */}
           <div className="relative h-[60vh] min-h-[400px] overflow-hidden">
             <img
-              src={selectedItem.image_url}
+              src={getSafeImageUrl(selectedItem.image_url)}
               alt={selectedItem.title}
               className="w-full h-full object-cover"
             />
+
             <div className="absolute inset-0 bg-gradient-to-t from-charcoal/90 via-charcoal/50 to-transparent" />
 
             {/* Back Button */}
@@ -150,10 +152,11 @@ const Gallery = () => {
                       className="relative aspect-[4/3] rounded-xl overflow-hidden group cursor-pointer"
                     >
                       <img
-                        src={img}
+                        src={getSafeImageUrl(img)}
                         alt={`${selectedItem.title} - Activity ${idx + 1}`}
                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                       />
+
                       <div className="absolute inset-0 bg-charcoal/0 group-hover:bg-charcoal/30 transition-colors" />
                     </div>
                   ))}
@@ -236,10 +239,11 @@ const Gallery = () => {
                   {/* Image */}
                   <div className="relative aspect-[4/3] overflow-hidden">
                     <img
-                      src={item.image_url}
+                      src={getSafeImageUrl(item.image_url)}
                       alt={item.title}
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                     />
+
                     <div className="absolute inset-0 bg-gradient-to-t from-charcoal/90 via-charcoal/40 to-transparent" />
 
                     {/* Featured Badge */}

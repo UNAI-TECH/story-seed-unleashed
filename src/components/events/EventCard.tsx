@@ -3,6 +3,7 @@ import { Calendar, Users, ArrowRight, Check, Vote, Star, GraduationCap, School }
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { getSafeImageUrl } from '@/integrations/supabase/client';
 
 interface EventCardProps {
     event: {
@@ -83,7 +84,7 @@ export const EventCard = ({ event, index = 0 }: EventCardProps) => {
                 {/* Background Image with Overlay */}
                 <div className="relative aspect-[16/10] overflow-hidden">
                     <img
-                        src={event.banner_image || 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=800&q=80'}
+                        src={getSafeImageUrl(event.banner_image) || 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=800&q=80'}
                         alt={event.name}
                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                     />

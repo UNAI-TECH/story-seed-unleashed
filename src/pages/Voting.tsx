@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, getSafeImageUrl } from '@/integrations/supabase/client';
+
 
 interface Contestant {
   id: string;
@@ -1125,8 +1126,9 @@ const Voting = () => {
                     />
                   ) : (
                     <video
-                      src={selectedContestant.yt_link}
+                      src={getSafeImageUrl(selectedContestant.yt_link)}
                       className="w-full h-full object-contain bg-black"
+
                       controls
                       controlsList="nodownload"
                       playsInline

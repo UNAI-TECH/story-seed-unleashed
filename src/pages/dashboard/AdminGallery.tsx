@@ -7,8 +7,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, getSafeImageUrl } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+
 
 const categories = ['Events', 'Performers', 'Sessions', 'Awards'];
 
@@ -328,10 +329,11 @@ const AdminGallery = () => {
                 {formData.image_url ? (
                   <div className="relative">
                     <img
-                      src={formData.image_url}
+                      src={getSafeImageUrl(formData.image_url)}
                       alt="Thumbnail Preview"
                       className="w-full h-40 object-cover rounded-lg"
                     />
+
                     <Button
                       type="button"
                       variant="destructive"
@@ -377,16 +379,17 @@ const AdminGallery = () => {
                   multiple
                   className="hidden"
                 />
-                
+
                 {formData.event_images.length > 0 && (
                   <div className="grid grid-cols-3 gap-2 mb-3">
                     {formData.event_images.map((url, index) => (
                       <div key={index} className="relative group">
                         <img
-                          src={url}
+                          src={getSafeImageUrl(url)}
                           alt={`Event image ${index + 1}`}
                           className="w-full h-20 object-cover rounded-lg"
                         />
+
                         <Button
                           type="button"
                           variant="destructive"
@@ -477,10 +480,11 @@ const AdminGallery = () => {
             <div key={item.id} className="bg-card rounded-2xl overflow-hidden border border-border/50">
               <div className="relative aspect-video">
                 <img
-                  src={item.image_url}
+                  src={getSafeImageUrl(item.image_url)}
                   alt={item.title}
                   className="w-full h-full object-cover"
                 />
+
                 {item.featured && (
                   <span className="absolute top-2 left-2 px-2 py-1 bg-secondary text-secondary-foreground text-xs font-semibold rounded-full flex items-center gap-1">
                     <Star className="w-3 h-3" />

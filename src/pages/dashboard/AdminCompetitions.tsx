@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, getSafeImageUrl } from '@/integrations/supabase/client';
+
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
@@ -415,8 +416,9 @@ const AdminCompetitions = () => {
           {selectedEvent && (
             <div className="space-y-4">
               {selectedEvent.banner_image && (
-                <img src={selectedEvent.banner_image} alt="Banner" className="w-full h-48 object-cover rounded-lg" />
+                <img src={getSafeImageUrl(selectedEvent.banner_image)} alt="Banner" className="w-full h-48 object-cover rounded-lg" />
               )}
+
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div><span className="text-muted-foreground">Start:</span> {selectedEvent.start_date ? format(new Date(selectedEvent.start_date), 'PPP') : 'Not set'}</div>
                 <div><span className="text-muted-foreground">End:</span> {selectedEvent.end_date ? format(new Date(selectedEvent.end_date), 'PPP') : 'Not set'}</div>

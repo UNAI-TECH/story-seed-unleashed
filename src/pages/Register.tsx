@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, getSafeImageUrl } from '@/integrations/supabase/client';
+
 import { format } from 'date-fns';
 import {
   Select,
@@ -482,9 +483,10 @@ const Register = () => {
           const fileName = `${registrationId}-${Date.now()}.pdf`;
           const { error: uploadError } = await supabase.storage.from('college-story-pdfs').upload(fileName, storyDetails.storyPdf);
           if (!uploadError) {
-            const pdfUrl = supabase.storage.from('college-story-pdfs').getPublicUrl(fileName).data.publicUrl;
+            const pdfUrl = getSafeImageUrl(supabase.storage.from('college-story-pdfs').getPublicUrl(fileName).data.publicUrl);
             await supabase.from('clg_registrations').update({ pdf_url: pdfUrl }).eq('id', registrationId);
           }
+
         }
       }
 

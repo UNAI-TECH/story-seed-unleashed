@@ -25,8 +25,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, getSafeImageUrl } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
+
 
 interface EventData {
   id: string;
@@ -51,9 +52,9 @@ const UserEventDetails = () => {
   useEffect(() => {
     const fetchEvent = async () => {
       if (!id) return;
-      
+
       setIsLoading(true);
-      
+
       const { data: eventData, error } = await supabase
         .from('events')
         .select('*')
@@ -80,7 +81,7 @@ const UserEventDetails = () => {
         .from('registrations')
         .select('*', { count: 'exact', head: true })
         .eq('event_id', id);
-      
+
       setParticipantCount(count || 0);
       setIsLoading(false);
     };
@@ -166,11 +167,10 @@ const UserEventDetails = () => {
           <span className="hidden sm:inline">Back</span>
         </Button>
         <span
-          className={`px-3 py-1 rounded-full text-xs font-semibold ${
-            hasEnded
+          className={`px-3 py-1 rounded-full text-xs font-semibold ${hasEnded
               ? 'bg-destructive text-destructive-foreground'
               : 'bg-green-100 text-green-700'
-          }`}
+            }`}
         >
           {hasEnded ? 'Event ended' : event.is_active ? 'Active event' : 'Upcoming event'}
         </span>
@@ -179,10 +179,11 @@ const UserEventDetails = () => {
       {/* Banner */}
       <div className="overflow-hidden rounded-2xl border border-border/60">
         <img
-          src={event.banner_image || 'https://images.unsplash.com/photo-1483721310020-03333e577078?w=1200&auto=format&fit=crop&q=80'}
+          src={getSafeImageUrl(event.banner_image) || 'https://images.unsplash.com/photo-1483721310020-03333e577078?w=1200&auto=format&fit=crop&q=80'}
           alt={event.name}
           className="w-full max-h-[260px] object-cover"
         />
+
       </div>
 
       {/* Main details header */}

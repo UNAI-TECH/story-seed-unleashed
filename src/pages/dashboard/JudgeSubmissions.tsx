@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Eye, Users, Play, Pause, Maximize, Vote, Gauge, MessageSquare } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, getSafeImageUrl } from '@/integrations/supabase/client';
+
 import { useAuth } from '@/contexts/AuthContext';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -152,11 +153,12 @@ const JudgeSubmissions = () => {
         .from('story-videos')
         .createSignedUrl(filePath, 3600); // 1-hour signed URL
 
-      if (!error && data?.signedUrl) return data.signedUrl;
+      if (!error && data?.signedUrl) return getSafeImageUrl(data.signedUrl);
     } catch (e) {
       console.error('Failed to create signed URL:', e);
     }
-    return url; // fallback
+    return getSafeImageUrl(url); // fallback
+
   };
 
   const handleOpenVoting = async (participant: Participant) => {

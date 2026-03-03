@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, getSafeImageUrl } from '@/integrations/supabase/client';
+
 import { useToast } from '@/hooks/use-toast';
 
 interface Event {
@@ -338,13 +339,12 @@ const AdminVideoManagement = () => {
                 {participants.map((participant) => (
                   <tr
                     key={participant.id}
-                    className={`border-t border-border/50 ${
-                      participant.isTop6
+                    className={`border-t border-border/50 ${participant.isTop6
                         ? 'bg-yellow-50 dark:bg-yellow-900/10'
                         : participant.isTop45
-                        ? 'bg-green-50 dark:bg-green-900/10'
-                        : ''
-                    }`}
+                          ? 'bg-green-50 dark:bg-green-900/10'
+                          : ''
+                      }`}
                   >
                     <td className="p-4">
                       {participant.rank > 0 ? (
@@ -404,11 +404,12 @@ const AdminVideoManagement = () => {
                     <td className="p-4">
                       {participant.yt_link ? (
                         <a
-                          href={participant.yt_link}
+                          href={getSafeImageUrl(participant.yt_link)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex items-center gap-1 text-primary hover:underline"
                         >
+
                           <Video className="w-4 h-4" />
                           <span className="text-sm">View</span>
                         </a>

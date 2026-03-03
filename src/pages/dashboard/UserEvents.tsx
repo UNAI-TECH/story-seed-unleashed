@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { Calendar, Trophy, Users, ArrowRight, Image, Gift } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, getSafeImageUrl } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
+
 
 interface Event {
   id: string;
@@ -109,11 +110,12 @@ const UserEvents = () => {
               {/* Banner Image */}
               {event.banner_image ? (
                 <div className="w-full h-48 overflow-hidden">
-                  <img 
-                    src={event.banner_image} 
+                  <img
+                    src={getSafeImageUrl(event.banner_image)}
                     alt={event.name}
                     className="w-full h-full object-cover"
                   />
+
                 </div>
               ) : (
                 <div className="w-full h-48 bg-muted flex items-center justify-center">
