@@ -81,11 +81,38 @@ const PaymentPortal = () => {
       }
       setEvent(data);
 
-      // Auto-set role if fixed
-      if (data.event_type === 'school') {
-        setPersonalInfo(prev => ({ ...prev, role: 'school' }));
-      } else if (data.event_type === 'college') {
-        setPersonalInfo(prev => ({ ...prev, role: 'college' }));
+      // 3. New: Check if user already has a registration
+      const { data: existingReg } = await supabase
+        .from('registrations')
+        .select('unique_key, payment_status')
+        .eq('event_id', eventId)
+        .eq('user_id', session.user.id)
+        .maybeSingle();
+
+      const { data: existingClgReg } = await supabase
+        .from('clg_registrations')
+        .select('unique_key, payment_status')
+        .eq('event_id', eventId)
+        .eq('user_id', session.user.id)
+        .maybeSingle();
+
+      const reg = existingReg || existingClgReg;
+
+      if (reg && reg.payment_status === 'paid') {
+        console.log('User already registered, jumping to Step 3');
+        setUniqueKey(reg.unique_key);
+        setPersonalInfo(prev => ({
+          ...prev,
+          role: existingReg ? 'school' : 'college'
+        }));
+        setStep(3);
+      } else {
+        // Auto-set role if fixed for new registrations
+        if (data.event_type === 'school') {
+          setPersonalInfo(prev => ({ ...prev, role: 'school' }));
+        } else if (data.event_type === 'college') {
+          setPersonalInfo(prev => ({ ...prev, role: 'college' }));
+        }
       }
 
       setLoading(false);
@@ -265,7 +292,7 @@ const PaymentPortal = () => {
     const status = searchParams.get('status');
     const paymentId = searchParams.get('payment_id');
 
-    if (status === 'success' && event && !submitting && step === 2) {
+    if (status === 'success' && event && !submitting) {
       const finalizePayment = async () => {
         setSubmitting(true);
         await submitPaymentToDB({
