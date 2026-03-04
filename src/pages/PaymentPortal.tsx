@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Smartphone, QrCode, ArrowRight, Loader2, Check, School, GraduationCap, Copy, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,7 @@ const generateUniqueKey = () => {
 
 const PaymentPortal = () => {
   const { eventId } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -27,6 +27,7 @@ const PaymentPortal = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const processingSuccess = useRef(false);
 
   const [step, setStep] = useState<1 | 2 | 3>(1); // 1: Personal, 2: Payment, 3: Success
   const [personalInfo, setPersonalInfo] = useState({
@@ -47,6 +48,26 @@ const PaymentPortal = () => {
   const [transactionId, setTransactionId] = useState('');
   const [senderName, setSenderName] = useState('');
   const [uniqueKey, setUniqueKey] = useState('');
+
+  // Restore personalInfo from sessionStorage on mount
+  useEffect(() => {
+    const savedInfo = sessionStorage.getItem('event_participant_info');
+    if (savedInfo) {
+      try {
+        const parsed = JSON.parse(savedInfo);
+        setPersonalInfo(prev => ({ ...prev, ...parsed }));
+      } catch (e) {
+        console.error('Failed to parse saved info', e);
+      }
+    }
+  }, []);
+
+  // Save personalInfo to sessionStorage on change
+  useEffect(() => {
+    if (personalInfo.firstName || personalInfo.lastName || personalInfo.phone) {
+      sessionStorage.setItem('event_participant_info', JSON.stringify(personalInfo));
+    }
+  }, [personalInfo]);
 
   useEffect(() => {
     const checkAuthAndFetchEvent = async () => {
@@ -213,19 +234,34 @@ const PaymentPortal = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
       const user = session.user;
-      const key = generateUniqueKey();
 
-      const tableName = personalInfo.role === 'school' ? 'registrations' : 'clg_registrations';
+      // Fallback: If state is lost, try to recover from sessionStorage one last time
+      let currentInfo = personalInfo;
+      if (!currentInfo.firstName || !currentInfo.age) {
+        const saved = sessionStorage.getItem('event_participant_info');
+        if (saved) {
+          currentInfo = JSON.parse(saved);
+          setPersonalInfo(currentInfo);
+        }
+      }
+
+      // Check for critical missing data
+      if (!currentInfo.firstName || !currentInfo.age) {
+        throw new Error('Registration details lost during payment redirect. Please contact support with your payment ID.');
+      }
+
+      const key = generateUniqueKey();
+      const tableName = currentInfo.role === 'school' ? 'registrations' : 'clg_registrations';
 
       const payload: any = {
         event_id: eventId,
         user_id: user.id,
-        first_name: personalInfo.firstName,
-        last_name: personalInfo.lastName,
+        first_name: currentInfo.firstName,
+        last_name: currentInfo.lastName,
         email: user.email,
-        phone: personalInfo.phone,
-        age: parseInt(personalInfo.age),
-        city: personalInfo.city,
+        phone: currentInfo.phone,
+        age: parseInt(currentInfo.age),
+        city: currentInfo.city,
         story_title: null,
         category: null,
         story_description: null,
@@ -234,12 +270,12 @@ const PaymentPortal = () => {
         payment_details: paymentDetails,
       };
 
-      if (personalInfo.role === 'school') {
-        payload.class_level = personalInfo.classLevel;
+      if (currentInfo.role === 'school') {
+        payload.class_level = currentInfo.classLevel;
       } else {
-        payload.college_name = personalInfo.collegeName;
-        payload.degree = personalInfo.degree;
-        payload.branch = personalInfo.branch;
+        payload.college_name = currentInfo.collegeName;
+        payload.degree = currentInfo.degree;
+        payload.branch = currentInfo.branch;
       }
 
       const { error } = await supabase
@@ -251,10 +287,10 @@ const PaymentPortal = () => {
       // Update profile institution/college
       if (user.id) {
         const profileUpdate: any = {};
-        if (personalInfo.role === 'school' && personalInfo.schoolName) {
-          profileUpdate.institution = personalInfo.schoolName;
-        } else if (personalInfo.role === 'college' && personalInfo.collegeName) {
-          profileUpdate.institution = personalInfo.collegeName;
+        if (currentInfo.role === 'school' && currentInfo.schoolName) {
+          profileUpdate.institution = currentInfo.schoolName;
+        } else if (currentInfo.role === 'college' && currentInfo.collegeName) {
+          profileUpdate.institution = currentInfo.collegeName;
         }
 
         if (Object.keys(profileUpdate).length > 0) {
@@ -264,7 +300,13 @@ const PaymentPortal = () => {
 
       setUniqueKey(key);
 
-      // Dynamic Redirection Logic
+      // Clear persistence storage on success
+      sessionStorage.removeItem('event_participant_info');
+
+      // 1. Clear URL parameters immediately after success so they don't re-trigger on refresh/back
+      setSearchParams({});
+
+      // 2. Dynamic Redirection Logic
       const now = new Date();
       const isRegOpen = event.registration_open ||
         (event.registration_start_date && now > new Date(event.registration_start_date));
@@ -282,6 +324,7 @@ const PaymentPortal = () => {
     } catch (error: any) {
       console.error('DB Insert Error:', error);
       toast({ title: 'Registration Failed', description: error.message + ' (Payment was successful, please contact support)', variant: 'destructive' });
+      processingSuccess.current = false; // Allow retry if DB failed but payment was success (rare)
     } finally {
       setSubmitting(false);
     }
@@ -292,7 +335,9 @@ const PaymentPortal = () => {
     const status = searchParams.get('status');
     const paymentId = searchParams.get('payment_id');
 
-    if (status === 'success' && event && !submitting) {
+    if (status === 'success' && event && !submitting && !processingSuccess.current) {
+      console.log('Detected successful payment return, finalising...');
+      processingSuccess.current = true;
       const finalizePayment = async () => {
         setSubmitting(true);
         await submitPaymentToDB({
@@ -302,7 +347,7 @@ const PaymentPortal = () => {
       };
       finalizePayment();
     }
-  }, [searchParams, event, step, submitting]);
+  }, [searchParams, event]);
 
   if (loading) {
     return (
