@@ -178,23 +178,47 @@ const JudgeSubmissions = () => {
     const score = Math.round((voteScore[0] / 100) * 10);
 
     try {
-      const { error } = await supabase.from('votes').insert({
-        user_id: user.id,
-        registration_id: selectedParticipant.registrationId,
-        score,
-        comment: judgeComment || null
-      });
+      console.log('Submitting vote:', { user_id: user.id, registration_id: selectedParticipant.registrationId, score });
 
-      if (error) throw error;
+      // Check if the judge already voted on this registration
+      const { data: existingVote } = await supabase
+        .from('votes')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('registration_id', selectedParticipant.registrationId)
+        .maybeSingle();
+
+      let error;
+      if (existingVote) {
+        // Update existing vote
+        ({ error } = await supabase
+          .from('votes')
+          .update({ score, comment: judgeComment || null, updated_at: new Date().toISOString() })
+          .eq('id', existingVote.id));
+      } else {
+        // Insert new vote
+        ({ error } = await supabase.from('votes').insert({
+          user_id: user.id,
+          registration_id: selectedParticipant.registrationId,
+          score,
+          comment: judgeComment || null
+        }));
+      }
+
+      if (error) {
+        console.error('Vote error details:', error);
+        throw error;
+      }
 
       toast({
-        title: 'Vote Submitted!',
+        title: existingVote ? 'Vote Updated!' : 'Vote Submitted!',
         description: `You gave a score of ${score}/10`
       });
 
       setIsVotingOpen(false);
       fetchEvents();
     } catch (error: any) {
+      console.error('Vote submission failed:', error);
       toast({
         title: 'Error',
         description: error.message || 'Failed to submit vote',

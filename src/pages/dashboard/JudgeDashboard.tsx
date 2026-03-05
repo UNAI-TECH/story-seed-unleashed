@@ -21,6 +21,7 @@ type Participant = {
   photo: string;
   videoUrl: string;
   registrationId: string;
+  hasVoted: boolean;
 };
 
 type EventWithParticipants = {
@@ -145,10 +146,18 @@ const JudgeDashboard = () => {
           const selectedByJudge = judgeVotesForEvent.filter(v => v.score >= 5).length;
           const rejectedByJudge = judgeVotesForEvent.filter(v => v.score < 5).length;
 
-          // Get pending participants (not yet voted by this judge)
-          const pendingParticipants = registrations?.filter(
-            reg => !votedRegistrationIds.includes(reg.id)
-          ) || [];
+          // Map all participants with voted status
+          const allParticipants = registrations?.map(p => ({
+            id: p.id,
+            name: `${p.first_name} ${p.last_name}`,
+            storyTitle: p.story_title,
+            age: p.age,
+            category: p.category,
+            photo: `https://api.dicebear.com/8.x/initials/svg?seed=${p.first_name}${p.last_name}`,
+            videoUrl: p.yt_link || '',
+            registrationId: p.id,
+            hasVoted: votedRegistrationIds.includes(p.id)
+          })) || [];
 
           eventsWithParticipants.push({
             id: event.id,
@@ -156,16 +165,7 @@ const JudgeDashboard = () => {
             totalParticipants,
             selectedByJudge,
             rejectedByJudge,
-            participants: pendingParticipants.map(p => ({
-              id: p.id,
-              name: `${p.first_name} ${p.last_name}`,
-              storyTitle: p.story_title,
-              age: p.age,
-              category: p.category,
-              photo: `https://api.dicebear.com/8.x/initials/svg?seed=${p.first_name}${p.last_name}`,
-              videoUrl: p.yt_link || '',
-              registrationId: p.id
-            }))
+            participants: allParticipants
           });
         }
 
@@ -215,22 +215,46 @@ const JudgeDashboard = () => {
     const score = Math.round((voteScore[0] / 100) * 10);
 
     try {
-      const { error } = await supabase.from('votes').insert({
-        user_id: user.id,
-        registration_id: selectedParticipant.registrationId,
-        score
-      });
+      console.log('Submitting vote:', { user_id: user.id, registration_id: selectedParticipant.registrationId, score });
 
-      if (error) throw error;
+      // Check if the judge already voted on this registration
+      const { data: existingVote } = await supabase
+        .from('votes')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('registration_id', selectedParticipant.registrationId)
+        .maybeSingle();
+
+      let error;
+      if (existingVote) {
+        // Update existing vote
+        ({ error } = await supabase
+          .from('votes')
+          .update({ score, updated_at: new Date().toISOString() })
+          .eq('id', existingVote.id));
+      } else {
+        // Insert new vote
+        ({ error } = await supabase.from('votes').insert({
+          user_id: user.id,
+          registration_id: selectedParticipant.registrationId,
+          score
+        }));
+      }
+
+      if (error) {
+        console.error('Vote error details:', error);
+        throw error;
+      }
 
       toast({
-        title: 'Vote Submitted!',
+        title: existingVote ? 'Vote Updated!' : 'Vote Submitted!',
         description: `You gave a score of ${score}/10`
       });
 
       setIsVotingOpen(false);
       fetchJudgeStats();
     } catch (error: any) {
+      console.error('Vote submission failed:', error);
       toast({
         title: 'Error',
         description: error.message || 'Failed to submit vote',
@@ -382,7 +406,7 @@ const JudgeDashboard = () => {
                     <div>
                       <p className="font-medium text-foreground">{submission.eventName}</p>
                       <p className="text-sm text-muted-foreground">
-                        {submission.participants.length} pending review(s)
+                        {submission.participants.filter(p => !p.hasVoted).length} pending review(s)
                       </p>
                     </div>
                     <Button
@@ -443,8 +467,8 @@ const JudgeDashboard = () => {
                   </div>
                   <span
                     className={`px-3 py-1 rounded-full text-xs font-medium ${review.status === 'Approved'
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-red-100 text-red-700'
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-red-100 text-red-700'
                       }`}
                   >
                     {review.status}
@@ -478,14 +502,24 @@ const JudgeDashboard = () => {
             {selectedSubmission?.participants?.map((participant) => (
               <div
                 key={participant.id}
-                className="flex items-center gap-3 rounded-xl bg-muted/40 border border-border/60 p-3"
+                className={`flex items-center gap-3 rounded-xl border p-3 ${participant.hasVoted
+                  ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'
+                  : 'bg-muted/40 border-border/60'
+                  }`}
               >
                 <Avatar className="w-10 h-10">
                   <AvatarImage src={participant.photo} alt={participant.name} />
                   <AvatarFallback>{participant.name.charAt(0)}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1">
-                  <p className="font-medium text-foreground">{participant.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-foreground">{participant.name}</p>
+                    {participant.hasVoted && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-200">
+                        Voted
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground">{participant.storyTitle}</p>
                   <p className="text-xs text-muted-foreground">
                     Age {participant.age} • {participant.category}
@@ -493,11 +527,12 @@ const JudgeDashboard = () => {
                 </div>
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant={participant.hasVoted ? 'ghost' : 'outline'}
                   type="button"
                   onClick={() => handleOpenVoting(participant)}
+                  disabled={participant.hasVoted}
                 >
-                  Vote
+                  {participant.hasVoted ? 'Done' : 'Vote'}
                 </Button>
               </div>
             ))}
