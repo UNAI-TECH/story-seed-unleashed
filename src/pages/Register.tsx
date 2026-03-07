@@ -347,9 +347,9 @@ const Register = () => {
   const uploadVideoToSupabase = async (videoFile: File, registrationId: string) => {
     try {
       setUploadStatus('uploading');
-      const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50 MB
+      const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500 MB
       if (videoFile.size > MAX_VIDEO_SIZE) {
-        toast({ title: 'File Too Large', description: 'Video must be under 50 MB.', variant: 'destructive' });
+        toast({ title: 'File Too Large', description: 'Video must be under 500 MB.', variant: 'destructive' });
         setUploadStatus('error');
         return null;
       }
@@ -915,8 +915,8 @@ const Register = () => {
                             accept="video/*"
                             onChange={e => {
                               const file = e.target.files?.[0] || null;
-                              if (file && file.size > 50 * 1024 * 1024) {
-                                toast({ title: 'File Too Large', description: 'Video must be under 50 MB.', variant: 'destructive' });
+                              if (file && file.size > 500 * 1024 * 1024) {
+                                toast({ title: 'File Too Large', description: 'Video must be under 500 MB.', variant: 'destructive' });
                                 e.target.value = '';
                                 return;
                               }
