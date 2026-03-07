@@ -487,7 +487,8 @@ const Register = () => {
       // 2. Handle File Uploads
       if (registrationId) {
         if (role === 'school' && storyDetails.videoFile) {
-          await uploadVideoToSupabase(storyDetails.videoFile, registrationId);
+          const uploadedFile = await uploadVideoToSupabase(storyDetails.videoFile, registrationId);
+          if (!uploadedFile) throw new Error("Video upload failed. Please try again.");
         } else if (role === 'college' && storyDetails.storyPdf) {
           const fileName = `${registrationId}-${Date.now()}.pdf`;
           const { error: uploadError } = await supabase.storage.from('college-story-pdfs').upload(fileName, storyDetails.storyPdf);
