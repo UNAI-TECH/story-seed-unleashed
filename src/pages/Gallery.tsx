@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { X, ArrowLeft, Star, Calendar, Users, Trophy, Award, Image as ImageIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase, getSafeImageUrl } from '@/integrations/supabase/client';
@@ -23,6 +24,8 @@ const Gallery = () => {
   const [selectedItem, setSelectedItem] = useState<GalleryItem | null>(null);
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const { id } = useParams();
+  const navigate = useNavigate();
 
   const fetchGalleryItems = async () => {
     try {
@@ -53,18 +56,29 @@ const Gallery = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (id && galleryItems.length > 0) {
+      const item = galleryItems.find(i => i.id === id);
+      if (item) {
+        setSelectedItem(item);
+      }
+    } else if (!id) {
+      setSelectedItem(null);
+    }
+  }, [id, galleryItems]);
+
   const filteredItems =
     activeCategory === 'All'
       ? galleryItems
       : galleryItems.filter((item) => item.category === activeCategory);
 
   const handleItemClick = (item: GalleryItem) => {
-    setSelectedItem(item);
+    navigate(`/gallery/${item.id}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleBack = () => {
-    setSelectedItem(null);
+    navigate('/gallery');
   };
 
   // Blog-style post view

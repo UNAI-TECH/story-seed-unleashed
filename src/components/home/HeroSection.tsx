@@ -17,33 +17,12 @@ interface LeaderQuote {
 const leaderQuotes: LeaderQuote[] = [
   {
     id: 0,
-    name: 'City Public School',
-    title: 'School Event 2024',
-    image: '/assets/school-event.jpg',
-    quote: 'Empowering students to find their voice and share their unique stories.',
+    name: 'Mercury Matric hr sec school',
+    title: 'Rising Little Voice Event Completion',
+    image: '/assets/mercury-school.JPG',
+    quote: 'A celebration of young voices and storytelling excellence at Mercury School.',
     link: '/gallery',
-    blur: true
-  },
-  {
-    id: 1,
-    name: 'C. Subramania Bharati',
-    title: 'Poet & Freedom Fighter',
-    image: '/assets/bhagat-singh.jpg',
-    quote: 'A Brave Heart and a Bright Mind Can Change the World.'
-  },
-  {
-    id: 2,
-    name: 'Dr. APJ Abdul Kalam',
-    title: 'Scientist & Former President of India',
-    image: '/assets/apj-kalam.jpg',
-    quote: 'Every dream begins as a story and every story deserves a voice.'
-  },
-  {
-    id: 3,
-    name: 'Albert Einstein',
-    title: 'Theoretical Physicist',
-    image: '/assets/einstein.jpg',
-    quote: 'Imagination is more important than knowledge.'
+    blur: false
   }
 ];
 
@@ -143,30 +122,32 @@ export const HeroSection = () => {
               </blockquote>
             </div>
 
-            {/* Dots Indicator */}
-            <div className="flex gap-3 pt-4">
-              {leaderQuotes.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => {
-                    setCurrentSlide(index);
-                    setIsAutoPlaying(false);
-                  }}
-                  className={cn(
-                    'h-2 rounded-full transition-all duration-300',
-                    index === currentSlide
-                      ? 'w-12 bg-primary shadow-lg'
-                      : 'w-2 bg-muted-foreground/40 hover:bg-muted-foreground/60'
-                  )}
-                  aria-label={`Go to slide ${index + 1}`}
-                />
-              ))}
-            </div>
+            {/* Dots Indicator - Only show if multiple slides */}
+            {leaderQuotes.length > 1 && (
+              <div className="flex gap-3 pt-4">
+                {leaderQuotes.map((_, index) => (
+                  <button
+                    key={index}
+                    onClick={() => {
+                      setCurrentSlide(index);
+                      setIsAutoPlaying(false);
+                    }}
+                    className={cn(
+                      'h-2 rounded-full transition-all duration-300',
+                      index === currentSlide
+                        ? 'w-12 bg-primary shadow-lg'
+                        : 'w-2 bg-muted-foreground/40 hover:bg-muted-foreground/60'
+                    )}
+                    aria-label={`Go to slide ${index + 1}`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Right Slider - Leader Images */}
           <div className="relative order-1 lg:order-2">
-            <AnimatedBlobCard className="max-w-xl mx-auto aspect-square">
+            <AnimatedBlobCard className="max-w-3xl mx-auto aspect-video">
               {leaderQuotes.map((leader, index) => {
                 const isCurrent = index === currentSlide;
                 const SlideContent = (
@@ -175,8 +156,7 @@ export const HeroSection = () => {
                       src={leader.image}
                       alt={leader.name}
                       className={cn(
-                        "w-full h-full object-cover transition-all duration-500",
-                        leader.blur ? "blur-sm hover:blur-none" : "grayscale hover:grayscale-0"
+                        "w-full h-full object-cover transition-all duration-500"
                       )}
                     />
                     {/* Gradient Overlay */}
