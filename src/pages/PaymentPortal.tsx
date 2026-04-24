@@ -199,13 +199,68 @@ const PaymentPortal = () => {
         return;
       }
 
-      // 2. Create Payment Link via Edge Function
+      // 2. Create Pending Registration Record
+      const key = generateUniqueKey();
+      const tableName = personalInfo.role === 'school' ? 'registrations' : 'clg_registrations';
+      
+      const payload: any = {
+        event_id: eventId,
+        user_id: authSession.user.id,
+        first_name: personalInfo.firstName,
+        last_name: personalInfo.lastName,
+        email: authSession.user.email,
+        phone: personalInfo.phone,
+        age: parseInt(personalInfo.age) || 0,
+        city: personalInfo.city,
+        payment_status: 'pending',
+        unique_key: key,
+      };
+
+      if (personalInfo.role === 'school') {
+        payload.class_level = personalInfo.classLevel;
+      } else {
+        payload.college_name = personalInfo.collegeName;
+        payload.degree = personalInfo.degree;
+        payload.branch = personalInfo.branch;
+      }
+
+      // Check if a pending record already exists to avoid duplicates
+      const { data: existingPending } = await supabase
+        .from(tableName)
+        .select('id, unique_key')
+        .eq('event_id', eventId)
+        .eq('user_id', authSession.user.id)
+        .eq('payment_status', 'pending')
+        .maybeSingle();
+
+      let registrationId = '';
+      let finalKey = key;
+
+      if (existingPending) {
+        // Update existing pending record with latest details
+        await supabase.from(tableName).update(payload).eq('id', existingPending.id);
+        registrationId = existingPending.id;
+        finalKey = existingPending.unique_key; // Keep original key or use new, but better to keep
+      } else {
+        const { data: newReg, error: insertError } = await supabase
+          .from(tableName)
+          .insert(payload)
+          .select('id')
+          .single();
+          
+        if (insertError) throw insertError;
+        registrationId = newReg.id;
+      }
+      
+      setUniqueKey(finalKey); // Save in state just in case
+
+      // 3. Create Payment Link via Edge Function
       const { data, error } = await supabase.functions.invoke('zoho-payment-handler', {
         body: {
           action: 'create-link',
           amount: event.registration_fee,
           customer_id: authSession.user.id,
-          order_id: eventId,
+          order_id: registrationId, // Pass registration ID instead of eventId so webhook knows what to update!
           email: authSession.user.email
         },
       });
@@ -223,7 +278,7 @@ const PaymentPortal = () => {
         throw new Error(errorMsg);
       }
 
-      // 3. Redirect to Zoho Hosted Page
+      // 4. Redirect to Zoho Hosted Page
       window.location.href = data.payment_url;
 
     } catch (error: any) {
@@ -243,66 +298,133 @@ const PaymentPortal = () => {
       if (!session) return;
       const user = session.user;
 
-      // Fallback: If state is lost, try to recover from sessionStorage one last time
-      let currentInfo = personalInfo;
-      if (!currentInfo.firstName || !currentInfo.age) {
-        const saved = sessionStorage.getItem('event_participant_info');
-        if (saved) {
-          currentInfo = JSON.parse(saved);
-          setPersonalInfo(currentInfo);
+      let key = '';
+
+      if (paymentDetails.method === 'zoho_link') {
+        // Find pending record
+        let pendingRecord = null;
+        let tableName = 'registrations';
+        
+        let { data: schoolPending } = await supabase
+          .from('registrations')
+          .select('*')
+          .eq('event_id', eventId)
+          .eq('user_id', user.id)
+          .eq('payment_status', 'pending')
+          .maybeSingle();
+
+        if (schoolPending) {
+          pendingRecord = schoolPending;
+        } else {
+          let { data: clgPending } = await supabase
+            .from('clg_registrations')
+            .select('*')
+            .eq('event_id', eventId)
+            .eq('user_id', user.id)
+            .eq('payment_status', 'pending')
+            .maybeSingle();
+            
+          if (clgPending) {
+            pendingRecord = clgPending;
+            tableName = 'clg_registrations';
+          }
         }
-      }
 
-      // Check for critical missing data
-      if (!currentInfo.firstName || !currentInfo.age) {
-        throw new Error('Registration details lost during payment redirect. Please contact support with your payment ID.');
-      }
+        if (!pendingRecord) {
+          // Check if webhook already updated it
+          let { data: alreadyPaid } = await supabase
+            .from('registrations')
+            .select('unique_key, payment_status')
+            .eq('event_id', eventId)
+            .eq('user_id', user.id)
+            .eq('payment_status', 'paid')
+            .maybeSingle();
 
-      const key = generateUniqueKey();
-      const tableName = currentInfo.role === 'school' ? 'registrations' : 'clg_registrations';
+          if (!alreadyPaid) {
+            let { data: clgAlreadyPaid } = await supabase
+              .from('clg_registrations')
+              .select('unique_key, payment_status')
+              .eq('event_id', eventId)
+              .eq('user_id', user.id)
+              .eq('payment_status', 'paid')
+              .maybeSingle();
+            if (clgAlreadyPaid) alreadyPaid = clgAlreadyPaid;
+          }
 
-      const payload: any = {
-        event_id: eventId,
-        user_id: user.id,
-        first_name: currentInfo.firstName,
-        last_name: currentInfo.lastName,
-        email: user.email,
-        phone: currentInfo.phone,
-        age: parseInt(currentInfo.age),
-        city: currentInfo.city,
-        story_title: null,
-        category: null,
-        story_description: null,
-        payment_status: 'paid',
-        unique_key: key,
-        payment_details: paymentDetails,
-      };
+          if (alreadyPaid) {
+            key = alreadyPaid.unique_key;
+          } else {
+            throw new Error('Registration details lost or pending record not found. Please contact support with your payment ID.');
+          }
+        } else {
+          // Update pending record to paid
+          const { error } = await supabase
+            .from(tableName)
+            .update({ payment_status: 'paid', payment_details: paymentDetails })
+            .eq('id', pendingRecord.id);
+            
+          if (error) throw error;
+          key = pendingRecord.unique_key;
+        }
 
-      if (currentInfo.role === 'school') {
-        payload.class_level = currentInfo.classLevel;
       } else {
-        payload.college_name = currentInfo.collegeName;
-        payload.degree = currentInfo.degree;
-        payload.branch = currentInfo.branch;
-      }
-
-      const { error } = await supabase
-        .from(tableName)
-        .insert(payload);
-
-      if (error) throw error;
-
-      // Update profile institution/college
-      if (user.id) {
-        const profileUpdate: any = {};
-        if (currentInfo.role === 'school' && currentInfo.schoolName) {
-          profileUpdate.institution = currentInfo.schoolName;
-        } else if (currentInfo.role === 'college' && currentInfo.collegeName) {
-          profileUpdate.institution = currentInfo.collegeName;
+        // FREE REGISTRATION FALLBACK
+        let currentInfo = personalInfo;
+        if (!currentInfo.firstName || !currentInfo.age) {
+          const saved = sessionStorage.getItem('event_participant_info');
+          if (saved) {
+            currentInfo = JSON.parse(saved);
+            setPersonalInfo(currentInfo);
+          }
         }
 
-        if (Object.keys(profileUpdate).length > 0) {
-          await supabase.from('profiles').update(profileUpdate).eq('id', user.id);
+        if (!currentInfo.firstName || !currentInfo.age) {
+          throw new Error('Registration details missing. Please complete the form.');
+        }
+
+        key = generateUniqueKey();
+        const tableName = currentInfo.role === 'school' ? 'registrations' : 'clg_registrations';
+
+        const payload: any = {
+          event_id: eventId,
+          user_id: user.id,
+          first_name: currentInfo.firstName,
+          last_name: currentInfo.lastName,
+          email: user.email,
+          phone: currentInfo.phone,
+          age: parseInt(currentInfo.age),
+          city: currentInfo.city,
+          story_title: null,
+          category: null,
+          story_description: null,
+          payment_status: 'paid',
+          unique_key: key,
+          payment_details: paymentDetails,
+        };
+
+        if (currentInfo.role === 'school') {
+          payload.class_level = currentInfo.classLevel;
+        } else {
+          payload.college_name = currentInfo.collegeName;
+          payload.degree = currentInfo.degree;
+          payload.branch = currentInfo.branch;
+        }
+
+        const { error } = await supabase.from(tableName).insert(payload);
+        if (error) throw error;
+
+        // Update profile institution/college
+        if (user.id) {
+          const profileUpdate: any = {};
+          if (currentInfo.role === 'school' && currentInfo.schoolName) {
+            profileUpdate.institution = currentInfo.schoolName;
+          } else if (currentInfo.role === 'college' && currentInfo.collegeName) {
+            profileUpdate.institution = currentInfo.collegeName;
+          }
+
+          if (Object.keys(profileUpdate).length > 0) {
+            await supabase.from('profiles').update(profileUpdate).eq('id', user.id);
+          }
         }
       }
 

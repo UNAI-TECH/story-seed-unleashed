@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.86.0";
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -133,6 +134,52 @@ serve(async (req: Request) => {
             }
 
             console.log('Processed Webhook Payload:', payload);
+
+            if (isValid) {
+                try {
+                    // Look for reference_id across possible Zoho payload formats
+                    const refId = payload?.data?.reference_id || 
+                                  payload?.payment?.reference_id || 
+                                  payload?.reference_id || 
+                                  payload?.paymentlink?.reference_id;
+                                  
+                    // Also check for successful payment status
+                    const isSuccess = payload?.data?.status === 'success' || 
+                                      payload?.status === 'success' ||
+                                      payload?.payment?.status === 'success' ||
+                                      payload?.event_type === 'payment_success';
+
+                    if (refId && isSuccess) {
+                        const registrationId = refId.split('_')[0]; // Extract the original registration UUID
+                        console.log(`Valid webhook for successful payment. Extracted Registration ID: ${registrationId}`);
+                        
+                        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+                        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+                        
+                        if (supabaseUrl && supabaseKey) {
+                            const supabase = createClient(supabaseUrl, supabaseKey, {
+                                auth: { autoRefreshToken: false, persistSession: false }
+                            });
+                            
+                            // We don't know if it's school or college from the ID, so update both. 
+                            // Only the one with the matching UUID will actually be affected.
+                            const updateData = { payment_status: 'paid', payment_details: payload };
+                            
+                            const { error: err1 } = await supabase.from('registrations').update(updateData).eq('id', registrationId);
+                            const { error: err2 } = await supabase.from('clg_registrations').update(updateData).eq('id', registrationId);
+                            
+                            if (err1) console.error('Error updating registrations table:', err1);
+                            if (err2) console.error('Error updating clg_registrations table:', err2);
+                            
+                            console.log('Database updated successfully via Webhook.');
+                        } else {
+                            console.error('Supabase credentials missing. Cannot update DB from webhook.');
+                        }
+                    }
+                } catch (dbErr) {
+                    console.error('Error updating database from webhook:', dbErr);
+                }
+            }
 
             return new Response(JSON.stringify({ received: true, status: isValid ? 'verified' : 'unverified' }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
